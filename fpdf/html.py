@@ -28,20 +28,21 @@ class HTML2FPDF(HTMLParser):
 
     def __init__(self, pdf, image_map=None):
         HTMLParser.__init__(self)
-        self.style = {}
+        self.line_height = 44
+        self.style = {} 
         self.pre = False
         self.href = ''
         self.align = ''
         self.page_links = {}
-        self.font = None
+        self.font = "dejavu"
         self.font_stack = [] 
         self.pdf = pdf
         self.image_map = image_map or (lambda src: src)
         self.r = self.g = self.b = 0
         self.indent = 0
         self.bullet = []
-        self.set_font("times", 12)
-        self.font_face = "times"    # initialize font
+        self.set_font("dejavu", 12)
+        self.font_face = "dejavu"    # initialize font
         self.color = 0              #initialize font color
         self.table = None           # table attributes
         self.table_col_width = None # column (header) widths
@@ -54,7 +55,7 @@ class HTML2FPDF(HTMLParser):
         self.thead = None
         self.tfoot = None
         self.theader_out = self.tfooter_out = False
-        self.hsize = dict(h1=2, h2=1.5, h3=1.17, h4=1, h5=0.83, h6=0.67)
+        self.hsize = dict(h1=2.38, h2=1.4, h3=1.17, h4=1, h5=0.83, h6=0.67)
         
     def width2mm(self, length):
         if length[-1]=='%':
@@ -78,8 +79,8 @@ class HTML2FPDF(HTMLParser):
                 l = self.table_col_width[i:i+colspan]
             else:
                 l = [self.td.get('width','240')]
-            w = sum([self.width2mm(length) for length in l])
-            h = int(self.td.get('height', 0)) // 4 or self.h*1.30
+            w = sum([self.width2mm(lenght) for lenght in l])
+            h = int(self.td.get('height', 0)) / 4 or self.h*1.30
             self.table_h = h
             border = int(self.table.get('border', 0))
             if not self.th:
@@ -99,7 +100,7 @@ class HTML2FPDF(HTMLParser):
             height = h + (self.tfooter and self.tfooter[0][0][1] or 0)
             if self.pdf.y+height>self.pdf.page_break_trigger and not self.th:
                 self.output_table_footer()
-                self.pdf.add_page(same = True)
+                self.pdf.add_page()
                 self.theader_out = self.tfooter_out = False
             if self.tfoot is None and self.thead is None:
                 if not self.theader_out: 
@@ -165,6 +166,16 @@ class HTML2FPDF(HTMLParser):
         w = sum([self.width2mm(lenght) for lenght in self.table_col_width])
         self.pdf.line(x1,y1,x1+w,y1)
 
+    def add_bullet(self, bull=None):
+        if bull is None:
+            bull = u'•'.encode('latin1')
+        self.indent+=1
+      #  self.bullet.append('\x95')
+        self.bullet.append(bull)
+
+    def rm_bullet(self):
+        self.indent -=1
+        self.bullet.pop()
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
@@ -176,17 +187,36 @@ class HTML2FPDF(HTMLParser):
         if tag=='br':
             self.pdf.ln(5)
         if tag=='p':
-            self.pdf.ln(5)
+            self.pdf.ln(self.h+5)
             if attrs:
                 if attrs: self.align = attrs.get('align')
         if tag in self.hsize:
             k = self.hsize[tag]
-            self.pdf.ln(5*k)
-            self.pdf.set_text_color(150,0,0)
+#            self.pdf.set_text_color(150,0,0)
+    #        print tag, self.pdf.y
             self.pdf.set_font_size(12 * k)
+
+            if self.pdf.y == self.pdf.t_margin:
+                ln_h = self.h
+                print 'just ln', tag
+            else:
+                ln_h = 12*k # 12*k 
+
+            print 'ln_h:', ln_h
+            self.pdf.ln(ln_h)
+            self.prev_ln_h = ln_h
+
+            self.set_style('B', True)
             if attrs: self.align = attrs.get('align')
+
+            '''
+            sizes = {'h1': 30, 'h2':24, 'h3':18, 'h4':16}
+            h_size = sizes[tag]
+            print h_size
+            '''
         if tag=='hr':
-            self.put_line()
+            #self.put_line()
+            self.pdf.add_page()
         if tag=='pre':
             self.pdf.set_font('Courier','',11)
             self.pdf.set_font_size(11)
@@ -197,26 +227,26 @@ class HTML2FPDF(HTMLParser):
             self.set_text_color(100,0,45)
             self.pdf.ln(3)
         if tag=='ul':
-            self.indent+=1
-            self.bullet.append('\x95')
+            self.add_bullet()
         if tag=='ol':
-            self.indent+=1
-            self.bullet.append(0)
+#            self.indent+=1
+#            self.bullet.append(0)
+            self.add_bullet(0)
         if tag=='li':
-            self.pdf.ln(self.h+2)
+            self.pdf.ln(self.h)
             self.pdf.set_text_color(190,0,0)
             bullet = self.bullet[self.indent-1]
-            if not isinstance(bullet, basestring):
+            if isinstance(bullet, int):
                 bullet += 1
                 self.bullet[self.indent-1] = bullet
                 bullet = "%s. " % bullet
-            self.pdf.write(self.h,'%s%s ' % (' '*5*self.indent, bullet))
+            self.pdf.write(self.h, u'%s%s ' % (' '*5*self.indent, bullet))
             self.set_text_color()
         if tag=='font':
             # save previous font state:
             self.font_stack.append((self.font_face, self.font_size, self.color))
             if 'color' in attrs:
-                color = hex2dec(attrs['color'])
+                self.color = hex2dec(attrs['color'])
                 self.set_text_color(*color)
                 self.color = color
             if 'face' in attrs:
@@ -282,12 +312,25 @@ class HTML2FPDF(HTMLParser):
         #Closing tag
         if DEBUG: print("ENDTAG", tag)
         if tag=='h1' or tag=='h2' or tag=='h3' or tag=='h4':
-            self.pdf.ln(6)
+
+            if tag in self.hsize:
+                k = self.hsize[tag]
+            else:
+                k = 0.5
+
+            ln_h = 3*k
+            print 'ENDTAG ', tag, 'ln_h:',  ln_h
+
+            ln_h = self.prev_ln_h / 4
+#            self.pdf.set_font_size(6 * k)
+            self.pdf.ln(ln_h)
             self.set_font()
+  #          self.set_font('dejavu', h_size)
             self.set_style()
+#            self.set_style('b', True)
             self.align = None
         if tag=='pre':
-            self.pdf.set_font(self.font or 'Times','',12)
+            self.pdf.set_font(self.font or 'dejavu','',12)
             self.pdf.set_font_size(12)
             self.pre=False
         if tag=='blockquote':
@@ -304,8 +347,7 @@ class HTML2FPDF(HTMLParser):
         if tag=='p':
             self.align=''
         if tag in ('ul', 'ol'):
-            self.indent-=1
-            self.bullet.pop()
+            self.rm_bullet()
         if tag=='table':
             if not self.tfooter_out:
                 self.output_table_footer()
@@ -350,9 +392,9 @@ class HTML2FPDF(HTMLParser):
             self.font_face = face
         if size:
             self.font_size = size
-            self.h = size / 72.0*25.4
+            self.h = size / 72.0 * self.line_height # 25.4
             if DEBUG: print("H", self.h)
-        self.pdf.set_font(self.font_face or 'times','',12)
+        self.pdf.set_font(self.font_face or 'dejavu','',12)
         self.pdf.set_font_size(self.font_size or 12)
         self.set_style('u', False)
         self.set_style('b', False)
@@ -384,19 +426,23 @@ class HTML2FPDF(HTMLParser):
         #Put a hyperlink
         self.set_text_color(0,0,255)
         self.set_style('u', True)
-        self.pdf.write(5,txt,url)
+        self.pdf.write(8,txt,url)
         self.set_style('u', False)
         self.set_text_color(0)
 
     def put_line(self):
-        self.pdf.ln(2)
-        self.pdf.line(self.pdf.get_x(),self.pdf.get_y(),self.pdf.get_x()+187,self.pdf.get_y())
-        self.pdf.ln(3)
+        self.pdf.ln(1)
+        self.pdf.line(self.pdf.get_x(),self.pdf.get_y(), self.pdf.w - self.pdf.r_margin,self.pdf.get_y())
+        self.pdf.ln(1)
 
 class HTMLMixin(object):
+    h2p = None
+    def put_line(self):
+        self.h2p.put_line()
+
     def write_html(self, text, image_map=None):
         "Parse HTML and convert it to PDF"
-        h2p = HTML2FPDF(self, image_map)
-        text = h2p.unescape(text) # To deal with HTML entities
-        h2p.feed(text)
+        self.h2p = HTML2FPDF(self, image_map)
+        text = self.h2p.unescape(text) # To deal with HTML entities
+        self.h2p.feed(text)
 
