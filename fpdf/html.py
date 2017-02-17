@@ -56,6 +56,7 @@ class HTML2FPDF(HTMLParser):
         self.tfoot = None
         self.theader_out = self.tfooter_out = False
         self.hsize = dict(h1=2.38, h2=1.4, h3=1.17, h4=1, h5=0.83, h6=0.67)
+        self.default_table_col_width = [  '50%', '12%', '23%', '15%' ];
         
     def width2mm(self, length):
         if length[-1]=='%':
@@ -69,10 +70,17 @@ class HTML2FPDF(HTMLParser):
     def handle_data(self, txt):
         if self.td is not None: # drawing a table?
             if 'width' not in self.td and 'colspan' not in self.td:
+#                print 'col:', self.table_col_index
+#                print 'self.table_col_width:', self.table_col_width
                 try:
                     l = [self.table_col_width[self.table_col_index]]
                 except IndexError:
-                    raise RuntimeError("Table column/cell width not specified, unable to continue")
+                    try:
+                        l = [self.default_table_col_width[self.table_col_index]]
+#                        print 'Default for col:',self.table_col_index , ' width:', l
+                    except IndexError:
+#                        print 'self.td', self.td
+                        raise RuntimeError("Table column/cell width not specified, unable to continue")
             elif 'colspan' in self.td:
                 i = self.table_col_index
                 colspan = int(self.td['colspan'])
@@ -80,6 +88,8 @@ class HTML2FPDF(HTMLParser):
             else:
                 l = [self.td.get('width','240')]
             w = sum([self.width2mm(lenght) for lenght in l])
+
+#            print 'Width in mm:', w
             h = int(self.td.get('height', 0)) / 4 or self.h*1.30
             self.table_h = h
             border = int(self.table.get('border', 0))
@@ -90,6 +100,10 @@ class HTML2FPDF(HTMLParser):
                 self.set_style('B',True)
                 border = border or 'B'
                 align = self.td.get('align', 'C')[0].upper()
+            if self.table_col_index == 0:
+                align = self.td.get('align', 'L')[0].upper()
+            else:
+                align = self.td.get('align', 'R')[0].upper()
             bgcolor = hex2dec(self.td.get('bgcolor', self.tr.get('bgcolor', '')))
             # parsing table header/footer (drawn later):
             if self.thead is not None:
@@ -286,7 +300,10 @@ class HTML2FPDF(HTMLParser):
             self.td = dict([(k.lower(), v) for k,v in attrs.items()])
             self.th = True
             if 'width' in self.td:
+                print '>width:', self.td['width']
                 self.table_col_width.append(self.td['width'])
+   #             self.table_col_width.append(self.th['width'])
+
         if tag=='thead':
             self.thead = {}
         if tag=='tfoot':
